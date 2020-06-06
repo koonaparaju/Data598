@@ -1,0 +1,86 @@
+---
+title: "Final Project V2"
+author: "Jeffrey Lai"
+date: "6/4/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tseries)
+require(forecast) #seasonplot
+require(fda) #create bases for functional data
+require(rainbow) #for coloring curves
+require(qcc) #ewma control chart
+require(car) #better QQ plots
+library(normwhn.test)
+library(reshape)
+library(dplyr)
+library(fpp3)
+library(seastests)
+library(Metrics)
+```
+
+```{r}
+stock_all = read.csv("C:\\Users\\jeffr\\Desktop\\DS\\Spring\\Time Series\\Final Project\\stock_series_train.csv")
+
+
+
+for (i in (1:21) ){
+  
+  stock1 = stock_all[,c( "Date","Close")][stock_all$stock_id == i,]
+  # check stationary
+  print(i)
+  print(paste0('kpss: ',kpss.test(stock1$Close)[3]))
+  
+  #ACF vs PACF
+  acf(stock1$Close,lag.max = 52*4)
+  pacf(stock1$Close,lag.max = 52*4)
+  #plot(stl( ts(stock1[,'Close'],frequency = 52), s.window = 52*4) )
+  
+  # check if seasonal
+  #sea = ets(stock1$Close)
+  #is_sea = TRUE
+  #if (sea$components[3] =='N'){
+  #  is_sea = FALSE
+  #}
+  
+  # split data into train val, and test
+  n = length(stock1$Date)
+  train_size = floor(length(stock1$Date)*.8)
+  val_size =  floor((n - train_size))/2
+  test_size = length(stock1$Date) - train_size - val_size
+  
+  train = stock1[1:train_size,]
+  val = stock1[(train_size+1):(train_size+val_size),]
+  test = stock1[(train_size+val_size+1):n,]
+  
+  # Fit auto arima
+  fit = auto.arima(train$Close, ic = "aic",lambda = 'auto')
+  
+  #Check Residuals:
+  qqPlot(fit$residuals)
+  print(paste0('Ljung-Box:',Box.test(fit$residuals, type="Ljung-Box")$p.value))
+  
+  #Metric Test
+  print(paste0('RMSE:',rmse(val$Close, forecast(fit, h=length(val$Close))$mean)))
+  
+  #Forecast with all the data
+  fit_14 = auto.arima(stock1$Close, ic = "aic",lambda = 'auto')
+  
+  # generate sample path
+  ma = matrix(i, nrow = 14, ncol = 1)#matrix(, nrow = 14, ncol = 0)
+  for (c in (0:499)){
+    ma = cbind(ma,simulate(fit_14, nsim=14, future=TRUE, bootstrap=TRUE)[1:14])
+    }
+  write.csv(ma, file=paste0("C:\\Users\\jeffr\\Desktop\\DS\\Spring\\Time Series\\Final Project\\stock_prediction_simulate", i, ".csv"),row.names=FALSE)
+  
+  
+  
+}  
+```
+
+
