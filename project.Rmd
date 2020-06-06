@@ -1,0 +1,52 @@
+---
+title: "Capstone"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+setwd("~/Desktop/Time_Series/Capstone")
+stock_all <- read.csv("stock_series_train.csv")
+
+for (i in (1:21) ){
+  
+  stock1 = stock_all[,c( "Date","Close")][stock_all$stock_id == i,]
+  # check stationary
+  #print(i)
+  #print(paste0('kpss: ',kpss.test(stock1$Close)[3]))
+  
+  # split data into train val, and test
+  n = length(stock1$Date)
+  train_size = floor(length(stock1$Date)*.8)
+  val_size =  floor((n - train_size))/2
+  test_size = length(stock1$Date) - train_size - val_size
+  
+  train = stock1[1:train_size,]
+  val = stock1[(train_size+1):(train_size+val_size),]
+  test = stock1[(train_size+val_size+1):n,]
+  
+  stock1 <- ts(train$Close, start=1, frequency=52)
+  
+  h_val = length(val$Close)
+  
+  # Fit auto stlf
+  forecastArima <- forecast::stlf(stock1, h = h_val, s.window = 52, t.window = 0.8, level=0.95)
+  forecastL <- forecast(forecastArima, h = h_val)
+  
+  # generate sample path
+  ma = matrix(-1, nrow = length(val$Close), ncol = 500)
+  for (c in 1:length(val$Close)){
+    mean = (forecastL[[5]][c] + forecastL[[6]][c]) / 2
+    sd = (forecastL[[5]][c] - mean) / 1.96
+    set.seed(1)
+    ma[c,] = rnorm(500, mean, sd)
+  }
+  print(sum(ma<0))
+  write.csv(ma, file=paste0("~/Desktop/Time_Series/Capstone/stock_prediction_simulate", i, ".csv"), row.names=FALSE)
+  
+} 
+```
