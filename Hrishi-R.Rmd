@@ -1,0 +1,168 @@
+---
+title: "Data 558 - Capstone project notebook"
+output: html_notebook
+---
+
+This notebook requires the following dependencies:
+<ul>xts</ul>
+
+<h1>Read in the data...</h1>
+
+Load it into a dataframe.
+```{r}
+df<-read.csv('C:/Users/hk/Downloads/stock_series_train.csv')
+
+df$Date=as.character(df$Date)
+df$Volume=as.numeric(df$Volume)
+df$sid=as.numeric(df$stock_id)
+df$Date=as.Date(df$Date, "%m/%d/%Y")
+```
+
+Make it into an xts time series
+
+```{r}
+library(xts)
+
+stocks <- xts(df[ ,c("sid", "Open", "High", "Low", "Volume", "Close")], order.by=df$Date, unique=FALSE, frequency = 7)
+
+```
+
+
+<h1>Plot a each time series individually</h1>
+
+```{r}
+print(length(stocks[stocks[,"sid"]==6, "sid"]))
+print(length(stocks[stocks[,"sid"]==1, "sid"]))
+
+print(length(rbind(get_sid_data(stocks, 6)[,"sid"], get_sid_data(stocks, 1)[,"sid"])[,"sid"]))
+
+```
+
+```{r}
+train_test=train_test_split(stocks,8, 0.9)
+print(paste("training data size: " ,length(train_test$train[,"sid"])))
+print(paste("test data size: ", length(train_test$test[,"sid"])))
+print(paste("max index of train: ", max(index(train_test$train))))
+```
+
+```{r}
+get_sid_data=function(xts_stocks, sid){
+  return(xts_stocks[xts_stocks[,"sid"]==sid,])
+}
+
+train_test_split=function(xts_stocks, sid, train_pct=0.8) {
+  sid_data=get_sid_data(xts_stocks, sid)
+  number_of_data_points=length(sid_data[,"sid"]) # just using one column to get length of the time series
+  print(number_of_data_points)
+  train_data_size = floor(train_pct * number_of_data_points)-1
+  if(train_data_size <= 0) {
+    stop("train_data_size was <= 0, please adjust train_pct to be higher")
+  }
+  if(train_data_size < number_of_data_points - train_data_size) {
+    stop(paste("ERROR: train data size (", train_data_size, "), is less than test data size (", number_of_data_points - train_data_size, ")"))
+  }
+  if(index(sid_data[train_data_size,"sid"]) > as.Date("2019-11-01")){
+    stop(paste("ERROR: data for ", index(sid_data[train_data_size,"sid"]), " and after is in the train data. The 'train_pct' provided (", train_pct, ") results in potential evaluation data leakage for stockid=",sid," please adjust it. train data size (", train_data_size, "),test data size (", number_of_data_points - train_data_size, "). Submission evaluation is on 2019-11-01 and after"))
+  }
+  # XTS should already be ordered so just use the index
+  ret_val = list("train"=sid_data[0:train_data_size,], "test"=sid_data[(train_data_size+1):number_of_data_points,])
+  return(ret_val)
+}
+
+get_train_test_split_for_all=function(xts_stocks){
+  train_data=NULL
+  test_data=NULL
+  train_test_data=apply_to_each_sid(xts_stocks, train_test_split)
+  for(train_test in train_test_data){
+    if(is.null(train_data)) {
+      train_data=train_test$train
+    }
+    else {
+      train_data=rbind(train_data, train_test$train)
+    }
+  
+    if(is.null(test_data)) {
+      test_data=train_test$test
+    }
+    else{
+      test_data=rbind(test_data, train_test$test)
+    }
+  }
+  return(list("train"=train_data, "test"=test_data))
+}
+
+apply_to_each_sid = function(xts_stocks, f) {
+  sids = unique(drop(coredata(xts_stocks[,"sid"])))
+  ret_val=c()
+  for(s in sids){
+    append(ret_val, f(xts_stocks, s))
+  }
+  return(ret_val)
+}
+
+
+
+plot_stock=function(xts_stocks, sid, var="Close") {
+  print(plot(xts_stocks[xts_stocks[,"sid"]==sid,var], main=paste('stock id ', sid), ylab="Close", xlab="Date"))
+  return(1)
+}
+
+plot_all = function(xts_stocks, var="Close"){
+  apply_to_each_sid(xts_stocks, function(xts_stocks, sid){ return(plot_stock(xts_stocks, sid, var))})
+}
+
+get_sample_paths=function(model, simulation_func=simulate, horizon=)
+```
+
+```{r}
+plot(get_sid_data(stocks,1)[,"Close"], xlim=c(2019,2021))
+lines(simulate(e,3),col='red')
+simulate(e, 3)
+```
+
+```{r}
+e=ets(stocks[stocks[,"sid"]==21, "Close"])
+p=predict(e, 3)
+plot(stocks[stocks[,"sid"]==21, "Close"],xlim=c(0,1000))
+lines(xts(simulate(e, nsim=100), col="red")
+
+print(length(simulate(e, nsim=100)))
+```
+
+```{r}
+plot_all(stocks)
+```
+
+This plot is bugged, but a bit useful to see that each time series actually contains a different length and amount of data -- in other words, we have to deal with missing values at some point AND that each time series spans a different time interval.
+```{r}
+require(ggplot2)
+df=fortify(stocks)
+ggplot(df, aes(Index,Close)) + geom_point() + facet_grid(sid ~ .)
+```
+
+
+<h1>Break apart into train, and test sets</h1>
+```{r}
+
+```
+
+<h1>Given all of this let's fit a simple model and plot the results</h1>
+
+```{r}
+require(forecast)
+require(gamlss)
+library(xtsextra)
+getVar = function(sid, vars, xts_stocks=stocks){
+  return(xts_stocks[xts_stocks[,"sid"]==sid, vars])
+}
+
+fit0 = ets(getVar(1, "Close", stocks), model='ANA', alpha = .001, gamma = .001)
+e.sd = sqrt(fit0$mse)
+pf0 = forecast(fit0,h=12)$mean
+yhat_l0 = as.numeric(qNO(.05,pf0,e.sd))
+yhat_u0 = as.numeric(qNO(.95,pf0,e.sd))
+
+print(getVar(1, "Close", stocks))
+ts.plot(ts(getVar(1, "Close", stocks)), ts(yhat_l0), ts(yhat_u0), color=c("black", "red",))
+
+```
