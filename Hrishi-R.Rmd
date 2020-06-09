@@ -6,36 +6,131 @@ output: html_notebook
 This notebook requires the following dependencies:
 <ul>xts</ul>
 
+This notebook is made to model per stock id, it requires modifications to meaningfully make models in any other architecture.
+
+How to Run:
+1. First time run the notebook from start to end in order.
+2. Then to speed up development, just run whichever chunks (likely first, and the last few chunks) needed to test and verify your model.
+```{r}
+####### SHOULD ONLY NEED TO EDIT THESE PARAMETERS TO RUN THE CODE #########
+
+
+####### YOU SHOULD REALLY MODIFY THESE TO SUIT YOUR RUN!!! ################################
+
+#The full file path to the stock_series_train.csv file
+full_file_path_to_stock_series_train='C:/Users/hk/Downloads/stock_series_train.csv'
+
+# The suffix for the resulting file. "test_results/test_<file suffix>.csv" for the evaluation data, and "final_results/final_submission_<file suffix>.csv" for the final_submission data.
+file_suffix="ets"
+
+
+model_to_run=function(train_data){
+  # train_data: xts object which
+  # return value: fitted model
+  fitted_model=ets(train_data[,"Close"])
+  return(fitted_model)
+}
+
+transform_train_data=function(train_data, stock_id){
+  # provided the data, filtered to stock id, and the stock id tranform the training data as required.
+  # If you need additional data, you may need to read through the code to understand how to plumb
+  # it through the function
+  # train_data: xts object with the training data, filtered to only the data for the associated stock_id
+  # stock_id: the integer stock id for which this call is for
+  # return: the modified version of train_data
+  modified_data = train_data
+  return(modified_data)
+}
+
+###########################################################################################
+
+####### THESE ARE OPTIONAL ################################################################
+# List of file suffixes to show in the evaluation table. THESE MUST BE in "test_results/" folder and follow the output format of "test_results/test_<file suffix>.csv" in order to be evaluated.
+file_suffixes_to_evaluate=c(file_suffix)
+
+# TRUE indicates that you wish to generate output for the final submission to "final_results/" directory, the output will have name "final_submission_<file_suffix>.csv". FALSE indicates you want to evaluate crps on the test set.
+final_submission=FALSE
+
+# (Recommended to leave FALSE) Choose whether to write a new train/test set. By default if a "data/train.csv" and "data/test.csv" don't exist locally, it'll create a new train and test dataset.
+force_write_new_train_test=TRUE
+
+# The percentage of each stock_id sample to hold as training data, rest is the test set.
+train_pct=0.9
+
+# (Recommended to leave FALSE) Choose whether to simulate new random walks from the log-t distrubtion from comparison or just load from a file (by default, if the file doesn't exist a new baseline will be generated).
+force_write_new_baseline=TRUE
+
+# TRUE if you want any errors to stop execution of the notebook. FALSE otherwise. WARNING: FALSE may hide errors which result in NAs showing up / incorrect output. But maybe useful for partial tests.
+failOnError=TRUE
+
+###########################################################################
+```
 <h1>Read in the data...</h1>
 
 Load it into a dataframe.
 ```{r}
-df<-read.csv('C:/Users/hk/Downloads/stock_series_train.csv')
+df<-read.csv(full_file_path_to_stock_series_train)
 
-df$Date=as.character(df$Date)
-df$Volume=as.numeric(df$Volume)
-df$sid=as.numeric(df$stock_id)
-df$Date=as.Date(df$Date, "%m/%d/%Y")
 ```
 
-Make it into an xts time series
+
 
 ```{r}
 library(xts)
 
-stocks <- xts(df[ ,c("sid", "Open", "High", "Low", "Volume", "Close")], order.by=df$Date, unique=FALSE, frequency = 7)
+library(lubridate)
 
+nearestfri=function(x){
+  return(x - wday(x) + 6)
+}
+clean_df=function(df){
+    df$Date=as.character(df$Date)
+  df$Volume=as.numeric(df$Volume)
+  df$sid=as.numeric(df$stock_id)
+  df$Date=as.Date(df$Date, "%m/%d/%Y")
+
+  return(df)
+}
+
+df=clean_df(df)
+df$Date=nearestfri(df$Date)
+df
 ```
 
 ```{r}
+
+
+convert_to_xts=function(df, clean=TRUE){
+  if(clean) {
+    df=clean_df(df)
+  }
+  return(xts(df[ ,c("sid", "Open", "High", "Low", "Volume", "Close")], order.by=df$Date, unique=FALSE, frequency = 7))
+}
+
+stocks = convert_to_xts(df, clean=FALSE)
+
+```
+
+
+```{r}
+
+
+
 get_sid_data=function(xts_stocks, sid){
   return(xts_stocks[xts_stocks[,"sid"]==sid,])
 }
 
-train_test_split=function(xts_stocks, sid, train_pct=0.8) {
+train_test_split=function(xts_stocks, sid, train_pct=0.8, test_cnt=NULL) {
+  if(!is.null(test_cnt)) {
+    print(paste("Using last", test_cnt, "observations, as specified."))
+  }
+
   sid_data=get_sid_data(xts_stocks, sid)
   number_of_data_points=length(sid_data[,"sid"]) # just using one column to get length of the time series
   train_data_size = floor(train_pct * number_of_data_points)-1
+  if (!is.null(test_cnt)) {
+    train_data_size = number_of_data_points - test_cnt
+  }
   if(train_data_size <= 0) {
     stop("train_data_size was <= 0, please adjust train_pct to be higher")
   }
@@ -50,10 +145,10 @@ train_test_split=function(xts_stocks, sid, train_pct=0.8) {
   return(ret_val)
 }
 
-get_train_test_split_for_all=function(xts_stocks){
+get_train_test_split_for_all=function(xts_stocks, train_pct=0.8, style="pct", test_cnt=NULL){
   train_data=NULL
   test_data=NULL
-  train_test_data=apply_to_each_sid(xts_stocks, train_test_split)
+  train_test_data=apply_to_each_sid(xts_stocks, function(xts_stocks, s){return(train_test_split(xts_stocks, s, train_pct=train_pct))})
   for(train_test in train_test_data){
     if(is.null(train_data)) {
       train_data=train_test$train
@@ -100,7 +195,7 @@ apply_to_each_sid_mod = function(xts_stocks, f, stock_id_col="sid", debug=FALSE,
   return(ret_val)
 }
 
-apply_to_each_sid = function(xts_stocks, f, stock_id_col="sid", debug=FALSE, failOnError=FALSE) {
+apply_to_each_sid = function(xts_stocks, f, stock_id_col="sid", debug=FALSE, failOnError=failOnError) {
   sids = sort(unique(drop(coredata(xts_stocks[,stock_id_col]))))
   ret_val=list()
   for(s in sids){
@@ -122,6 +217,9 @@ apply_to_each_sid = function(xts_stocks, f, stock_id_col="sid", debug=FALSE, fai
   return(ret_val)
 }
 
+get_horizon = function(forecast_from, forecast_to) {
+  return(floor(difftime(forecast_to, forecast_from, units="weeks")))
+}
 
 
 plot_stock=function(xts_stocks, sid, var="Close") {
@@ -152,31 +250,36 @@ get_forecast_times=function(forecast_from=as.Date("2019-11-01"), forecast_to=as.
   return(seq(forecast_from, forecast_to, "week"))
 }
 
-get_sample_paths=function(xts_stocks, sid, model, simulation_func=simulate_to_vec, number_of_sample_paths=500, forecast_to=NULL, forecast_from=NULL){
+get_sample_paths=function(xts_stocks, sid, model, simulation_func=function(x,h) {simulate_to_vec(x,h)}, number_of_sample_paths=500, forecast_to=NULL, final_submission=FALSE){
+  sid_data=get_sid_data(xts_stocks, sid)
   forecast_times=get_forecast_times()
-  if(is.null(forecast_from)) {
-      forecast_from=min(forecast_times)
-  }
+  last_time=max(index(sid_data))
+  fit=model(sid_data)
   if(is.null(forecast_to)) {
       forecast_to=max(forecast_times)
   }
-  sid_data=get_sid_data(xts_stocks, sid)
-  fit=model(sid_data)
-  last_time=max(index(sid_data))
-  horizon=difftime(forecast_to, last_time, units="weeks") # expect that this will be a whole number
+  horizon=get_horizon(last_time, forecast_to) # expect that this will be a whole number
   if(horizon<1) {
     print(paste("stock id:", sid, "Data contains horizon, please remove the horizon data to avoid training and testing on it."))
     return(get_empty_output_df())
   }
   df=get_empty_output_df()
+  len_values=0
   for(i in 1:number_of_sample_paths) {
     column=paste("ysim_", i, sep="")
     forecast_values=simulation_func(fit, horizon)
     df[1:length(forecast_values),column] = forecast_values
+    len_values=length(forecast_values)
   }
-  forecast_times = get_forecast_times(forecast_from, forecast_to)
-  df[1:length(forecast_times),"Date"]= forecast_times
-  df[1:length(forecast_times),"stock_id"]=rep(sid, length(forecast_times))
+  forecast_times = get_forecast_times(forecast_from = last_time + 7, forecast_to)
+  if(len_values != length(forecast_times)) {
+    stop(paste("ERROR: len_values,", len_values,", and forecast_times,", length(forecast_times), ", not equal."))
+  }
+  if(final_submission) {
+    forecast_times = get_forecast_times()
+  }
+  df[1:length(forecast_times),"Date"] = forecast_times
+  df[1:length(forecast_times),"stock_id"] =rep(sid, length(forecast_times))
   return(df)
 }
 
@@ -198,117 +301,207 @@ get_forecast_to_from_test_df=function(test_df) {
   return(
     apply_to_each_sid(test_df, 
                       function(test_df, sid) {
-                        return(list(forecast_from=min(index(test_df)),forecast_to=max(index(test_df))))
+                        return(list(forecast_to=max(index(test_df))))
                       }))
 }
 
-get_sample_paths_for_all_stocks=function(xts_stocks, model, simulation_func=simulate_to_vec, number_of_sample_paths=500, horizon_list=NULL, plotForecasts=FALSE, plotFunc=NULL, debug=FALSE) {
+get_forecast_to_from_horizon_list=function(horizon_list, sid){
+  forecast_to=NULL
+  if(toString(sid) %in% names(horizon_list)) {
+    horizon=horizon_list[[toString(sid)]]
+    if("forecast_to" %in% names(horizon)) {
+      forecast_to = horizon$forecast_to
+    }
+  }
+  return(forecast_to)
+}
+
+get_sample_paths_for_all_stocks=function(xts_stocks, model, simulation_func=function(x,h) {simulate_to_vec(x,h)}, number_of_sample_paths=500, horizon_list=NULL, plotForecasts=FALSE, plotFunc=NULL, debug=FALSE, final_submission=FALSE, failOnError=failOnError) {
   if(is.null(plotFunc) && plotForecasts){
     stop("ERROR: plotFunc cannot be null, when plotForecasts==TRUE")
   }
 
   vec_of_sample_paths=apply_to_each_sid(xts_stocks, 
                                         function(xts_stocks, sid) {
-                                          forecast_from=NULL
-                                          forecast_to=NULL
-                                          if(toString(sid) %in% names(horizon_list)) {
-                                            horizon=horizon_list[[toString(sid)]]
-                                            if("forecast_to" %in% names(horizon)) {
-                                              forecast_to = horizon$forecast_to
-                                            }
-                                            if("forecast_from" %in% names(horizon)) {
-                                              forecast_from = horizon$forecast_from
-                                            }
-                                          }
-                                          return(get_sample_paths(xts_stocks, sid, model, simulation_func, number_of_sample_paths, forecast_to=forecast_to, forecast_from=forecast_from))},  debug=debug)
+                                          forecast_to=get_forecast_to_from_horizon_list(horizon_list, sid)
+                                          return(get_sample_paths(xts_stocks, sid, model, simulation_func=simulation_func, number_of_sample_paths=number_of_sample_paths, forecast_to=forecast_to, final_submission=final_submission))},  debug=debug, failOnError=failOnError )
   
   if(plotForecasts) {
     apply_to_each_sid(xts_stocks, function(xts_stocks, sid) {plotFunc(xts_stocks, sid, 14)})
   }
   return(rbind_list(vec_of_sample_paths))
 }
+
+```
+
+
+```{r}
+xts_to_df=function(xt){
+  return(data.frame(Date=index(xt), coredata(xt)))
+}
+
+# Change this to TRUE if you want to generate a new test/train set.
+# Leave as FALSE if you just want to load data.
+force=FALSE
+
+if (file.exists("data/train.csv") && !force_write_new_train_test) {
+  print("Loading pre-generated train and test samples.")
+  train=convert_to_xts(read.csv("data/train.csv"))
+  test=convert_to_xts(read.csv("data/test.csv"))
+} else {
+  print("Creating new train and test samples...")
+  train_test=get_train_test_split_for_all(stocks, train_pct=0.9 )
+  train=train_test$train
+  test=train_test$test
+  write.csv(xts_to_df(train), "data/train.csv", row.names=FALSE)
+  write.csv(xts_to_df(test), "data/test.csv", row.names=FALSE)
+  print("DONE!")
+}
 ```
 
 ```{r}
-train_test=get_train_test_split_for_all(stocks)
-train=train_test$train
-test=train_test$test
-write.csv(train, "train.csv")
-write.csv(test, "test.csv")
-```
+get_random_walk = function(xts_stocks, sid, forecast_to=as.Date("2020-01-31")) {
+  last_time = max(index(xts_stocks))
+  horizon = get_horizon(last_time, forecast_to)
+  len_test=length(get_sid_data(test,sid)[,"sid"])
+  if(len_test != horizon)
+  {
+    print(paste("ERROR:", sid, ": horizon and len(test) not equal"))
+    print(paste("    DateFrom:,", last_time, "to ", forecast_to))
+    print(paste("    DateFrom:,", min(index(get_sid_data(test,sid))), "to ", max(index(get_sid_data(test,sid)))))
+    print(paste("    horizon:", horizon))
+    print(paste("    len(test):", len_test ))
 
-```{r}
-ets(get_sid_data(train, 20)[,"Close"])
-```
-```{r}
-x=list(a=8)
-print(names(x))
+  }
+  df=length(xts_stocks[,"sid"])-1
+  samplingDist=exp(rt(1000, df=df))
+  last_val=as.numeric(xts_stocks[last_time][,"Close"])
+  ret_val=as.numeric(last_val + cumsum(sample(samplingDist, horizon, replace=TRUE)))
+  return(ret_val)
+}
 
-print("1" %in% names(horizons))
-print(horizons[["1"]]$forecast_to)
-                                          forecast_from=NULL
-                                          forecast_to=NULL
-                                          print("test")
-                                          if(toString(1) %in% names(horizons)) {
-                                            print("in there")
-                                            horizon=horizons[[toString(sid)]]
-                                            print(names(horizon))
-                                            if("forecast_to" %in% names(horizon)) {
-                                              print("null fill")
-                                              forecast_to = horizon$forecast_to
-                                            }
-                                            if("forecast_from" %in% names(horizon)) {
-                                              forecast_from = horizon$forecast_from
-                                            }
-                                          }
-                                          print(forecast_to)
-```
+get_random_walks_for_sid = function(xts_stocks, sid, forecast_to=NULL, nsim=500) {
+  if(is.null(forecast_to)) {
+    forecast_to=as.Date("2020-01-31")
+  }
+  forecast_from=max(index(xts_stocks))+7
+  df=get_empty_output_df()
+  forecast_times=get_forecast_times(forecast_from, forecast_to)
+  df[1:length(forecast_times), "Date"]= forecast_times
+  df[1:length(forecast_times), "stock_id"]=rep(sid, length(forecast_times))
+  for(i in 1:nsim) {
+    column=paste("ysim_", i, sep="")
+    df[1:length(forecast_times),column]=get_random_walk(xts_stocks, sid, forecast_to)
+  }
+  return(df)
+}
 
+get_random_walk_for_all = function(xts_stocks, horizon_list, nsim=500) {
+  result = apply_to_each_sid(xts_stocks, function(xts_stocks, sid) {
+    forecast_to=get_forecast_to_from_horizon_list(horizon_list, sid)
+    return(get_random_walks_for_sid(xts_stocks, sid, forecast_to = forecast_to, nsim=nsim))
+  } )
+  
+  return(rbind_list(result))
+}
+
+horizons=get_forecast_to_from_test_df(test)
+
+if(force_write_new_baseline || !file.exists("data/baseline.csv")) {
+  baseline=get_random_walk_for_all(train, horizons)
+  baseline
+  write.csv(baseline, "data/baseline.csv", row.names=FALSE)
+} else {
+  baseline = read.csv("data/baseline.csv")
+}
+
+```
 ```{r}
 
 get_lag_col=function(xts_stocks, sid, col_name, lag) {
   return(cbind(xts_stocks, lag(xts_stocks[,col_name], lag)))
 }
 
-train_with_lag=apply_to_each_sid_mod(train, function(xts_stocks, sid) {return(get_lag_col(xts_stocks, sid, "Open", 1))})
-train_with_lag
+train_after_transformation=apply_to_each_sid_mod(train, function(xts_stocks, sid) {return(get_lag_col(xts_stocks, sid, "Open", 1))})
+
+train = transform_train_data(train)
 ```
 
 
 ```{r}
 library(forecast)
-ets_model=function(x){return(auto.arima(drop(x[,"Close"]), xreg=drop(x[,"Open.1"])))}
-horizons=get_forecast_to_from_test_df(test)
-all_sample_paths_df=get_sample_paths_for_all_stocks(na.omit(train_with_lag), model=ets_model,horizon_list=horizons)
+library(xts)
 
-file_suffix="auto_arima_with_open"
-write.csv(all_sample_paths_df, paste("out_all_test_", file_suffix, ".csv", sep=""), row.names = FALSE)
-all_sample_paths_df
+
+  horizons=get_forecast_to_from_test_df(test)
+  all_sample_paths_df=get_sample_paths_for_all_stocks(train, model=model_to_run, final_submission = FALSE, horizon_list=horizons)
+
+
+if(final_submission) {
+    final_submission_df=get_sample_paths_for_all_stocks(stocks["/2019-10-31"], model=model_to_run, final_submission = final_submission)
+    write.csv(final_submission_df, paste("final_results/final_submission_", file_suffix, ".csv", sep=""), row.names=FALSE)
+    }
+
+write.csv(all_sample_paths_df, paste("test_results/test_", file_suffix, ".csv", sep=""), row.names = FALSE)
 ```
 
 ```{r}
 library(scoringRules)
+baseline_csv_path="data/baseline.csv"
+
+evaluate=function(actuals, sample_paths) {
+  return(mean(crps_sample(actuals, sample_paths)))
+}
+
+get_random_walk = function(xts_stocks, sid, forecast_to=as.Date("2020-01-31")) {
+  last_date = max(index(xts_stocks))
+  horizon = ceiling(difftime(forecast_to, last_date, "weeks"))
+  return(cumsum(sample(log(rt(1000, df=length(xts_stocks[,"sid"])-1)), horizon, replace=TRUE)))
+}
+
+get_random_walks_for_sid = function(xts_stocks, sid, forecast_to=as.Date("2020-01-31"), nsim=500) {
+  ret_val = NULL
+  for(i in 1:500) {
+    result = get_random_walk(xts_stocks, sid, forecast_to)
+    if (is.null(ret_val)) {
+      ret_val = result
+    } else {
+      ret_val = rbind(ret_val, result)
+    }
+  }
+  
+  return(as.matrix(ret_val))
+}
+
+get_base_crps=function() {
+  return(0)
+}
+
 evaluate_per_stock_id=function(df, s, test_df=test) {
-    return(mean(crps_sample(as.numeric(test_df[test_df[,"sid"]==s,"Close"]), as.matrix(df[,!names(df) %in% c("stock_id", "Date")]))))
+    return(evaluate(as.numeric(test_df[test_df[,"sid"]==s,"Close"]), as.matrix(df[,!names(df) %in% c("stock_id", "Date")])))
 }
 
 evaluate_for_all_stocks=function(df, test_df=test) {
   return(apply_to_each_sid(df, function(df,s){return(evaluate_per_stock_id(df,s))}, stock_id_col = "stock_id"))
 }
 
-file_suffixes=c("auto_arima", "ets", "auto_arima_drop", "ets_drop", "ets_ts", "auto_arima_with_open")
+baseline_crps_per_stock=evaluate_for_all_stocks(read.csv(baseline_csv_path))
+
+
 pred_dfs=list()
 evaluations=list()
-for(suffix in file_suffixes) {
-  file_to_evaluate=paste("out_all_test_", suffix, ".csv", sep="")
+for(suffix in file_suffixes_to_evaluate) {
+  file_to_evaluate=paste("test_results/test_", suffix, ".csv", sep="")
   pred_to_evaluate_df = read.csv(file_to_evaluate)
   pred_dfs[[suffix]]= pred_to_evaluate_df
   evaluations[[suffix]] = evaluate_for_all_stocks(pred_to_evaluate_df)
 }
 
+
+
 col_names=c("stock_id")
 col_classes=c("integer")
-for(suffix in file_suffixes) {
+for(suffix in file_suffixes_to_evaluate) {
   col_names=append(col_names, suffix)
   col_classes=append(col_classes, "numeric")
 }
@@ -340,21 +533,30 @@ list_mean=function(eval_list) {
   return(mean(sapply(eval_list, mean)))
 }
 
- print(names(results))
 for(s in sids) {
   results[i, "stock_id"]=s
+  baseline_val=baseline_crps_per_stock[[toString(s)]]
   for(name in names(evaluations)) {
-    results[i, name]=iif_to_na(evaluations[[name]],s)  
+    results[i, name]=iif_to_na(evaluations[[name]],s)/baseline_val
   }
   i=i+1
 }
 
-for(name in names(evaluations)) {
-  mean_results[1, name] = list_mean(evaluations[[name]])
-}
 
 
-mean_results
+
+colMeans(results[sapply(results, is.numeric)]) 
+```
+
+```{r}
+results
+```
+
+```{r}
+```
+
+```{r}
+
 ```
 
 ```{r}
