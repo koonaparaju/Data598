@@ -21,13 +21,13 @@ How to Run:
 full_file_path_to_stock_series_train='C:/Users/hk/Downloads/stock_series_train.csv'
 
 # The suffix for the resulting file. "test_results/test_<file suffix>.csv" for the evaluation data, and "final_results/final_submission_<file suffix>.csv" for the final_submission data.
-file_suffix="ets"
+file_suffix="auto_arima"
 
 
 model_to_run=function(train_data){
   # train_data: xts object which
   # return value: fitted model
-  fitted_model=ets(train_data[,"Close"])
+  fitted_model=auto.arima(train_data[,"Close"])
   return(fitted_model)
 }
 
@@ -46,7 +46,7 @@ transform_train_data=function(train_data, stock_id){
 
 ####### THESE ARE OPTIONAL ################################################################
 # List of file suffixes to show in the evaluation table. THESE MUST BE in "test_results/" folder and follow the output format of "test_results/test_<file suffix>.csv" in order to be evaluated.
-file_suffixes_to_evaluate=c(file_suffix)
+file_suffixes_to_evaluate=c(file_suffix, "ets")
 
 # TRUE indicates that you wish to generate output for the final submission to "final_results/" directory, the output will have name "final_submission_<file_suffix>.csv". FALSE indicates you want to evaluate crps on the test set.
 final_submission=FALSE
@@ -58,7 +58,7 @@ force_write_new_train_test=TRUE
 train_pct=0.9
 
 # (Recommended to leave FALSE) Choose whether to simulate new random walks from the log-t distrubtion from comparison or just load from a file (by default, if the file doesn't exist a new baseline will be generated).
-force_write_new_baseline=TRUE
+force_write_new_baseline=FALSE
 
 # TRUE if you want any errors to stop execution of the notebook. FALSE otherwise. WARNING: FALSE may hide errors which result in NAs showing up / incorrect output. But maybe useful for partial tests.
 failOnError=TRUE
