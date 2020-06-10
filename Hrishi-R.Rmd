@@ -11,7 +11,14 @@ This notebook is made to model per stock id, it requires modifications to meanin
 How to Run:
 1. First time run the notebook from start to end in order.
 2. Then to speed up development, just run whichever chunks (likely first, and the last few chunks) needed to test and verify your model.
+
 ```{r}
+require(tseries)
+require(MASS)
+require(tsfknn)
+require(fracdiff)
+require(Metrics)
+library(forecast)
 ####### SHOULD ONLY NEED TO EDIT THESE PARAMETERS TO RUN THE CODE #########
 
 
@@ -27,7 +34,7 @@ file_suffix="auto_arima"
 model_to_run=function(train_data){
   # train_data: xts object which
   # return value: fitted model
-  fitted_model=auto.arima(train_data[,"Close"])
+  fitted_model=auto.arima(coredata(drop(train_data[,"Close"])))#, xreg=coredata(train_data[,"Open.1"]))
   return(fitted_model)
 }
 
@@ -38,7 +45,10 @@ transform_train_data=function(train_data, stock_id){
   # train_data: xts object with the training data, filtered to only the data for the associated stock_id
   # stock_id: the integer stock id for which this call is for
   # return: the modified version of train_data
-  modified_data = train_data
+  
+  # Add a lag variable, with "Open" lagged by 1
+  #first_transform = apply_to_each_sid_mod(train, function(xts_stocks, sid) {return(get_lag_col(xts_stocks, sid, "Open", 1))})
+  modified_data=train_data#first_transform[!is.na(first_transform[,"Open.1"]),]
   return(modified_data)
 }
 
@@ -46,7 +56,12 @@ transform_train_data=function(train_data, stock_id){
 
 ####### THESE ARE OPTIONAL ################################################################
 # List of file suffixes to show in the evaluation table. THESE MUST BE in "test_results/" folder and follow the output format of "test_results/test_<file suffix>.csv" in order to be evaluated.
-file_suffixes_to_evaluate=c(file_suffix, "ets")
+file_suffixes_to_evaluate=NULL#c(file_suffix, "ets")
+
+# Compare to other tested models
+if (is.null(file_suffixes_to_evaluate)) {
+  
+}
 
 # TRUE indicates that you wish to generate output for the final submission to "final_results/" directory, the output will have name "final_submission_<file_suffix>.csv". FALSE indicates you want to evaluate crps on the test set.
 final_submission=FALSE
@@ -61,7 +76,7 @@ train_pct=0.9
 force_write_new_baseline=FALSE
 
 # TRUE if you want any errors to stop execution of the notebook. FALSE otherwise. WARNING: FALSE may hide errors which result in NAs showing up / incorrect output. But maybe useful for partial tests.
-failOnError=TRUE
+shouldFailOnError=TRUE
 
 ###########################################################################
 ```
@@ -167,7 +182,7 @@ get_train_test_split_for_all=function(xts_stocks, train_pct=0.8, style="pct", te
   return(list("train"=train_data, "test"=test_data))
 }
 
-apply_to_each_sid_mod = function(xts_stocks, f, stock_id_col="sid", debug=FALSE, failOnError=FALSE) {
+apply_to_each_sid_mod = function(xts_stocks, f, stock_id_col="sid", debug=FALSE, failOnError=shouldFailOnError) {
   sids = sort(unique(drop(coredata(xts_stocks[,stock_id_col]))))
   ret_val=NULL
   for(s in sids){
@@ -195,7 +210,7 @@ apply_to_each_sid_mod = function(xts_stocks, f, stock_id_col="sid", debug=FALSE,
   return(ret_val)
 }
 
-apply_to_each_sid = function(xts_stocks, f, stock_id_col="sid", debug=FALSE, failOnError=failOnError) {
+apply_to_each_sid = function(xts_stocks, f, stock_id_col="sid", debug=FALSE, failOnError=shouldFailOnError) {
   sids = sort(unique(drop(coredata(xts_stocks[,stock_id_col]))))
   ret_val=list()
   for(s in sids){
@@ -316,7 +331,11 @@ get_forecast_to_from_horizon_list=function(horizon_list, sid){
   return(forecast_to)
 }
 
-get_sample_paths_for_all_stocks=function(xts_stocks, model, simulation_func=function(x,h) {simulate_to_vec(x,h)}, number_of_sample_paths=500, horizon_list=NULL, plotForecasts=FALSE, plotFunc=NULL, debug=FALSE, final_submission=FALSE, failOnError=failOnError) {
+get_lag_col=function(xts_stocks, sid, col_name, lag) {
+  return(cbind(xts_stocks, lag(xts_stocks[,col_name], lag)))
+}
+
+get_sample_paths_for_all_stocks=function(xts_stocks, model, simulation_func=function(x,h) {simulate_to_vec(x,h)}, number_of_sample_paths=500, horizon_list=NULL, plotForecasts=FALSE, plotFunc=NULL, debug=FALSE, final_submission=FALSE, failOnError=shouldFailOnError) {
   if(is.null(plotFunc) && plotForecasts){
     stop("ERROR: plotFunc cannot be null, when plotForecasts==TRUE")
   }
@@ -416,14 +435,8 @@ if(force_write_new_baseline || !file.exists("data/baseline.csv")) {
 }
 
 ```
+
 ```{r}
-
-get_lag_col=function(xts_stocks, sid, col_name, lag) {
-  return(cbind(xts_stocks, lag(xts_stocks[,col_name], lag)))
-}
-
-train_after_transformation=apply_to_each_sid_mod(train, function(xts_stocks, sid) {return(get_lag_col(xts_stocks, sid, "Open", 1))})
-
 train = transform_train_data(train)
 ```
 
@@ -553,12 +566,9 @@ results
 ```
 
 ```{r}
-```
-
-```{r}
-
-```
-
-```{r}
 results
 ```
+
+```{r}
+```
+
