@@ -12,7 +12,8 @@ How to Run:
 1. First time run the notebook from start to end in order.
 2. Then to speed up development, just run whichever chunks (likely first, and the last few chunks) needed to test and verify your model.
 
-```{r}
+```{r include=FALSE}
+
 require(tseries)
 require(MASS)
 require(tsfknn)
@@ -34,12 +35,12 @@ file_suffix="auto_arima_lambda0"
 model_to_run=function(train_data){
   # train_data: xts object which
   # return value: fitted model
-  fitted_model=auto.arima(drop(train_data[,"Close"]), lambda=0)#, xreg=coredata(train_data[,"Open.1"]))
+  fitted_model=auto.arima(drop(train_data[,"Close"]), lambda=0, xreg=coredata(train_data[,"Open.1"]))
   return(fitted_model)
 }
 
 transform_train_data=function(train_data, stock_id){
-  # provided the data, filtered to stock id, and the stock id tranform the training data as required.
+  # provided the data, filtered to stock id, and the stock id transform the training data as required.
   # If you need additional data, you may need to read through the code to understand how to plumb
   # it through the function
   # train_data: xts object with the training data, filtered to only the data for the associated stock_id
@@ -47,8 +48,8 @@ transform_train_data=function(train_data, stock_id){
   # return: the modified version of train_data
   
   # Add a lag variable, with "Open" lagged by 1
-  #first_transform = apply_to_each_sid_mod(train, function(xts_stocks, sid) {return(get_lag_col(xts_stocks, sid, "Open", 1))})
-  modified_data=train_data#first_transform[!is.na(first_transform[,"Open.1"]),]
+  first_transform = apply_to_each_sid_mod(train, function(xts_stocks, sid) {return(get_lag_col(xts_stocks, sid, "Open", 1))})
+  modified_data=first_transform[!is.na(first_transform[,"Open.1"]),]
   return(modified_data)
 }
 
@@ -84,14 +85,14 @@ shouldFailOnError=TRUE
 <h1>Read in the data...</h1>
 
 Load it into a dataframe.
-```{r}
+```{r echo=FALSE}
 df<-read.csv(full_file_path_to_stock_series_train)
 
 ```
 
 
 
-```{r}
+```{r echo=FALSE}
 library(xts)
 
 library(lubridate)
@@ -121,7 +122,7 @@ df$Date=nearestfri(df$Date)
 df
 ```
 
-```{r}
+```{r echo=FALSE}
 
 
 convert_to_xts=function(df, clean=TRUE){
@@ -136,7 +137,7 @@ stocks = convert_to_xts(df, clean=FALSE)
 ```
 
 
-```{r}
+```{r echo=FALSE}
 
 
 
@@ -363,7 +364,7 @@ get_sample_paths_for_all_stocks=function(xts_stocks, model, simulation_func=func
 ```
 
 
-```{r}
+```{r echo=FALSE}
 xts_to_df=function(xt){
   return(data.frame(Date=index(xt), coredata(xt)))
 }
@@ -387,7 +388,7 @@ if (file.exists("data/train.csv") && !force_write_new_train_test) {
 }
 ```
 
-```{r}
+```{r echo=FALSE}
 get_random_walk = function(xts_stocks, sid, forecast_to=as.Date("2020-01-31")) {
   last_time = max(index(xts_stocks))
   horizon = get_horizon(last_time, forecast_to)
@@ -445,12 +446,12 @@ if(force_write_new_baseline || !file.exists("data/baseline.csv")) {
 
 ```
 
-```{r}
-train = transform_train_data(train)
+```{r echo=FALSE}
+train = rbind_list(apply_to_each_sid(train, transform_train_data))
 ```
 
 
-```{r}
+```{r echo=FALSE}
 library(forecast)
 library(xts)
 
@@ -467,7 +468,7 @@ if(final_submission) {
 write.csv(all_sample_paths_df, paste("test_results/test_", file_suffix, ".csv", sep=""), row.names = FALSE)
 ```
 
-```{r}
+```{r echo=FALSE}
 library(scoringRules)
 baseline_csv_path="data/baseline.csv"
 
@@ -563,10 +564,10 @@ for(s in sids) {
   }
   i=i+1
 }
+```
 
 
-
-
+```{r}
 colMeans(results[sapply(results, is.numeric)]) 
 ```
 
@@ -574,10 +575,4 @@ colMeans(results[sapply(results, is.numeric)])
 results
 ```
 
-```{r}
-results
-```
-
-```{r}
-```
 
