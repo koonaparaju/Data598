@@ -35,7 +35,7 @@ file_suffix="auto_arima_lambda0"
 model_to_run=function(train_data){
   # train_data: xts object which
   # return value: fitted model
-  fitted_model=auto.arima(drop(train_data[,"Close"]), lambda=0, xreg=coredata(train_data[,"Open.1"]))
+  fitted_model=auto.arima(coredata(train_data[,"Close"]), lambda=0, xreg=coredata(train_data[,"Open.1"]))
   return(fitted_model)
 }
 
@@ -48,11 +48,41 @@ transform_train_data=function(train_data, stock_id){
   # return: the modified version of train_data
   
   # Add a lag variable, with "Open" lagged by 1
-  first_transform = apply_to_each_sid_mod(train, function(xts_stocks, sid) {return(get_lag_col(xts_stocks, sid, "Open", 1))})
+  first_transform = get_lag_col(train_data, sid, "Open", 1)
   modified_data=first_transform[!is.na(first_transform[,"Open.1"]),]
   return(modified_data)
 }
 
+# Simulation function for your model
+# input:
+#   fitted_model : a fitted model of model_to_run
+#   horizon : integer representing the number of steps ahead to forecast
+#   train_data : the relevant training data used to fit the model
+#   stock_id : the stock_id being simulated.
+# return:
+#   a vector-like object for each forecast in the simulation, where 
+#   the i th element represents the t+i^th forecast. 
+#   i.e.: 1st term is 1 step ahead forecast, 2nd is 2 steps, 3rd is 3 steps ahead, and so on.
+# LEAVE NULL if:
+#   if you leave null, the code will be default use the simulate() function for the model (e.g., simulate(ets, nsim=horizon))
+
+custom_simulation_function=NULL # leave this line here
+if(FALSE){ # change to true to use custom simulation
+  model_cache=list()
+
+  custom_simulation_function=function(fitted_model, horizon, train_data, stock_id) {
+    model_to_get_open=NULL
+    if(toString(stock_id) %in% names(model_cache)){
+      model_to_get_open = model_cache[[toString(stock_id)]]
+    }
+    else {
+      model_to_get_open=auto.arima(coredata(train_data[,"Open.1"]))
+      model_cache[[toString(stock_id)]]=model_to_get_open
+    }
+    xreg_simulation=simulate(model_to_get_open, horizon)
+    return(simulate(fitted_model, nsim=horizon, xreg=xreg_simulation, lambda=0))
+  }
+}
 ###########################################################################################
 
 ####### THESE ARE OPTIONAL ################################################################
@@ -267,7 +297,7 @@ for(i in 1:500) {
   return(tdf)
 }
 
-simulate_to_vec=function(fit, horizon) {
+simulate_to_vec=function(fit, horizon, train, stock_id) {
   return(as.numeric(simulate(fit, nsim=horizon)))
 }
 
@@ -275,7 +305,10 @@ get_forecast_times=function(forecast_from=as.Date("2019-11-01"), forecast_to=as.
   return(seq(forecast_from, forecast_to, "week"))
 }
 
-get_sample_paths=function(xts_stocks, sid, model, simulation_func=function(x,h) {simulate_to_vec(x,h)}, number_of_sample_paths=500, forecast_to=NULL, final_submission=FALSE){
+get_sample_paths=function(xts_stocks, sid, model, simulation_func=NULL, number_of_sample_paths=500, forecast_to=NULL, final_submission=FALSE){
+  if(is.null(simulation_func)){
+    simulation_func=simulation_to_vec
+  }
   sid_data=get_sid_data(xts_stocks, sid)
   forecast_times=get_forecast_times()
   last_time=max(index(sid_data))
@@ -292,7 +325,7 @@ get_sample_paths=function(xts_stocks, sid, model, simulation_func=function(x,h) 
   len_values=0
   for(i in 1:number_of_sample_paths) {
     column=paste("ysim_", i, sep="")
-    forecast_values=simulation_func(fit, horizon)
+    forecast_values=simulation_func(fit, horizon, sid_data, sid)
     df[1:length(forecast_values),column] = forecast_values
     len_values=length(forecast_values)
   }
@@ -345,7 +378,7 @@ get_lag_col=function(xts_stocks, sid, col_name, lag) {
   return(cbind(xts_stocks, lag(xts_stocks[,col_name], lag)))
 }
 
-get_sample_paths_for_all_stocks=function(xts_stocks, model, simulation_func=function(x,h) {simulate_to_vec(x,h)}, number_of_sample_paths=500, horizon_list=NULL, plotForecasts=FALSE, plotFunc=NULL, debug=FALSE, final_submission=FALSE, failOnError=shouldFailOnError) {
+get_sample_paths_for_all_stocks=function(xts_stocks, model, simulation_func=simulate_to_vec, number_of_sample_paths=500, horizon_list=NULL, plotForecasts=FALSE, plotFunc=NULL, debug=FALSE, final_submission=FALSE, failOnError=shouldFailOnError) {
   if(is.null(plotFunc) && plotForecasts){
     stop("ERROR: plotFunc cannot be null, when plotForecasts==TRUE")
   }
@@ -457,11 +490,11 @@ library(xts)
 
 
   horizons=get_forecast_to_from_test_df(test)
-  all_sample_paths_df=get_sample_paths_for_all_stocks(train, model=model_to_run, final_submission = FALSE, horizon_list=horizons)
+  all_sample_paths_df=get_sample_paths_for_all_stocks(train, model=model_to_run, final_submission = FALSE, horizon_list=horizons, simulation_func = custom_simulation_function)
 
 
 if(final_submission) {
-    final_submission_df=get_sample_paths_for_all_stocks(stocks["/2019-10-31"], model=model_to_run, final_submission = final_submission)
+    final_submission_df=get_sample_paths_for_all_stocks(stocks["/2019-10-31"], model=model_to_run, final_submission = final_submission, simulation_func = custom_simulation_function)
     write.csv(final_submission_df, paste("final_results/final_submission_", file_suffix, ".csv", sep=""), row.names=FALSE)
     }
 
