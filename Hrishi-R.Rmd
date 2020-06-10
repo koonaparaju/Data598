@@ -28,13 +28,13 @@ library(forecast)
 full_file_path_to_stock_series_train='C:/Users/hk/Downloads/stock_series_train.csv'
 
 # The suffix for the resulting file. "test_results/test_<file suffix>.csv" for the evaluation data, and "final_results/final_submission_<file suffix>.csv" for the final_submission data.
-file_suffix="auto_arima"
+file_suffix="auto_arima_lambda0"
 
 
 model_to_run=function(train_data){
   # train_data: xts object which
   # return value: fitted model
-  fitted_model=auto.arima(coredata(drop(train_data[,"Close"])))#, xreg=coredata(train_data[,"Open.1"]))
+  fitted_model=auto.arima(drop(train_data[,"Close"]), lambda=0)#, xreg=coredata(train_data[,"Open.1"]))
   return(fitted_model)
 }
 
@@ -56,18 +56,18 @@ transform_train_data=function(train_data, stock_id){
 
 ####### THESE ARE OPTIONAL ################################################################
 # List of file suffixes to show in the evaluation table. THESE MUST BE in "test_results/" folder and follow the output format of "test_results/test_<file suffix>.csv" in order to be evaluated.
-file_suffixes_to_evaluate=NULL#c(file_suffix, "ets")
+file_suffixes_to_evaluate=NULL # c(file_suffix, "ets")
 
 # Compare to other tested models
 if (is.null(file_suffixes_to_evaluate)) {
-  
+  file_suffixes_to_evaluate=sub(".csv","",sub("test_", "", list.files("test_results")))
 }
 
 # TRUE indicates that you wish to generate output for the final submission to "final_results/" directory, the output will have name "final_submission_<file_suffix>.csv". FALSE indicates you want to evaluate crps on the test set.
 final_submission=FALSE
 
 # (Recommended to leave FALSE) Choose whether to write a new train/test set. By default if a "data/train.csv" and "data/test.csv" don't exist locally, it'll create a new train and test dataset.
-force_write_new_train_test=TRUE
+force_write_new_train_test=FALSE
 
 # The percentage of each stock_id sample to hold as training data, rest is the test set.
 train_pct=0.9
@@ -101,7 +101,7 @@ nearestfri=function(x){
 clean_df=function(df){
     df$Date=as.character(df$Date)
   df$Volume=as.numeric(df$Volume)
-  df$sid=as.numeric(df$stock_id)
+  df$stock_id=as.numeric(df$stock_id)
   df$Date=as.Date(df$Date, "%m/%d/%Y")
 
   return(df)
@@ -119,7 +119,7 @@ convert_to_xts=function(df, clean=TRUE){
   if(clean) {
     df=clean_df(df)
   }
-  return(xts(df[ ,c("sid", "Open", "High", "Low", "Volume", "Close")], order.by=df$Date, unique=FALSE, frequency = 7))
+  return(xts(df[ ,c("stock_id", "Open", "High", "Low", "Volume", "Close")], order.by=df$Date, unique=FALSE, frequency = 7))
 }
 
 stocks = convert_to_xts(df, clean=FALSE)
@@ -132,7 +132,7 @@ stocks = convert_to_xts(df, clean=FALSE)
 
 
 get_sid_data=function(xts_stocks, sid){
-  return(xts_stocks[xts_stocks[,"sid"]==sid,])
+  return(xts_stocks[xts_stocks[,"stock_id"]==sid,])
 }
 
 train_test_split=function(xts_stocks, sid, train_pct=0.8, test_cnt=NULL) {
@@ -141,7 +141,7 @@ train_test_split=function(xts_stocks, sid, train_pct=0.8, test_cnt=NULL) {
   }
 
   sid_data=get_sid_data(xts_stocks, sid)
-  number_of_data_points=length(sid_data[,"sid"]) # just using one column to get length of the time series
+  number_of_data_points=length(sid_data[,"stock_id"]) # just using one column to get length of the time series
   train_data_size = floor(train_pct * number_of_data_points)-1
   if (!is.null(test_cnt)) {
     train_data_size = number_of_data_points - test_cnt
@@ -152,8 +152,8 @@ train_test_split=function(xts_stocks, sid, train_pct=0.8, test_cnt=NULL) {
   if(train_data_size < number_of_data_points - train_data_size) {
     stop(paste("ERROR: train data size (", train_data_size, "), is less than test data size (", number_of_data_points - train_data_size, ")"))
   }
-  if(index(sid_data[train_data_size,"sid"]) > as.Date("2019-11-01")){
-    stop(paste("ERROR: data for ", index(sid_data[train_data_size,"sid"]), " and after is in the train data. The 'train_pct' provided (", train_pct, ") results in potential evaluation data leakage for stockid=",sid," please adjust it. train data size (", train_data_size, "),test data size (", number_of_data_points - train_data_size, "). Submission evaluation is on 2019-11-01 and after"))
+  if(index(sid_data[train_data_size,"stock_id"]) > as.Date("2019-11-01")){
+    stop(paste("ERROR: data for ", index(sid_data[train_data_size,"stock_id"]), " and after is in the train data. The 'train_pct' provided (", train_pct, ") results in potential evaluation data leakage for stock_id=",sid," please adjust it. train data size (", train_data_size, "),test data size (", number_of_data_points - train_data_size, "). Submission evaluation is on 2019-11-01 and after"))
   }
   # XTS should already be ordered so just use the index
   ret_val = list("train"=sid_data[0:train_data_size,], "test"=sid_data[(train_data_size+1):number_of_data_points,])
@@ -182,7 +182,7 @@ get_train_test_split_for_all=function(xts_stocks, train_pct=0.8, style="pct", te
   return(list("train"=train_data, "test"=test_data))
 }
 
-apply_to_each_sid_mod = function(xts_stocks, f, stock_id_col="sid", debug=FALSE, failOnError=shouldFailOnError) {
+apply_to_each_sid_mod = function(xts_stocks, f, stock_id_col="stock_id", debug=FALSE, failOnError=shouldFailOnError) {
   sids = sort(unique(drop(coredata(xts_stocks[,stock_id_col]))))
   ret_val=NULL
   for(s in sids){
@@ -210,7 +210,7 @@ apply_to_each_sid_mod = function(xts_stocks, f, stock_id_col="sid", debug=FALSE,
   return(ret_val)
 }
 
-apply_to_each_sid = function(xts_stocks, f, stock_id_col="sid", debug=FALSE, failOnError=shouldFailOnError) {
+apply_to_each_sid = function(xts_stocks, f, stock_id_col="stock_id", debug=FALSE, failOnError=shouldFailOnError) {
   sids = sort(unique(drop(coredata(xts_stocks[,stock_id_col]))))
   ret_val=list()
   for(s in sids){
@@ -238,7 +238,7 @@ get_horizon = function(forecast_from, forecast_to) {
 
 
 plot_stock=function(xts_stocks, sid, var="Close") {
-  print(plot(xts_stocks[xts_stocks[,"sid"]==sid,var], main=paste('stock id ', sid), ylab="Close", xlab="Date"))
+  print(plot(xts_stocks[xts_stocks[,"stock_id"]==sid,var], main=paste('stock id ', sid), ylab="Close", xlab="Date"))
   return(1)
 }
 
@@ -382,7 +382,7 @@ if (file.exists("data/train.csv") && !force_write_new_train_test) {
 get_random_walk = function(xts_stocks, sid, forecast_to=as.Date("2020-01-31")) {
   last_time = max(index(xts_stocks))
   horizon = get_horizon(last_time, forecast_to)
-  len_test=length(get_sid_data(test,sid)[,"sid"])
+  len_test=length(get_sid_data(test,sid)[,"stock_id"])
   if(len_test != horizon)
   {
     print(paste("ERROR:", sid, ": horizon and len(test) not equal"))
@@ -392,7 +392,7 @@ get_random_walk = function(xts_stocks, sid, forecast_to=as.Date("2020-01-31")) {
     print(paste("    len(test):", len_test ))
 
   }
-  df=length(xts_stocks[,"sid"])-1
+  df=length(xts_stocks[,"stock_id"])-1
   samplingDist=exp(rt(1000, df=df))
   last_val=as.numeric(xts_stocks[last_time][,"Close"])
   ret_val=as.numeric(last_val + cumsum(sample(samplingDist, horizon, replace=TRUE)))
@@ -469,7 +469,7 @@ evaluate=function(actuals, sample_paths) {
 get_random_walk = function(xts_stocks, sid, forecast_to=as.Date("2020-01-31")) {
   last_date = max(index(xts_stocks))
   horizon = ceiling(difftime(forecast_to, last_date, "weeks"))
-  return(cumsum(sample(log(rt(1000, df=length(xts_stocks[,"sid"])-1)), horizon, replace=TRUE)))
+  return(cumsum(sample(log(rt(1000, df=length(xts_stocks[,"stock_id"])-1)), horizon, replace=TRUE)))
 }
 
 get_random_walks_for_sid = function(xts_stocks, sid, forecast_to=as.Date("2020-01-31"), nsim=500) {
@@ -491,7 +491,7 @@ get_base_crps=function() {
 }
 
 evaluate_per_stock_id=function(df, s, test_df=test) {
-    return(evaluate(as.numeric(test_df[test_df[,"sid"]==s,"Close"]), as.matrix(df[,!names(df) %in% c("stock_id", "Date")])))
+    return(evaluate(as.numeric(test_df[test_df[,"stock_id"]==s,"Close"]), as.matrix(df[,!names(df) %in% c("stock_id", "Date")])))
 }
 
 evaluate_for_all_stocks=function(df, test_df=test) {
