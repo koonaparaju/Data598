@@ -61,6 +61,7 @@ file_suffixes_to_evaluate=NULL # c(file_suffix, "ets")
 # Compare to other tested models
 if (is.null(file_suffixes_to_evaluate)) {
   file_suffixes_to_evaluate=sub(".csv","",sub("test_", "", list.files("test_results")))
+  file_suffixes_to_evaluate=append(file_suffixes_to_evaluate, file_suffix)
 }
 
 # TRUE indicates that you wish to generate output for the final submission to "final_results/" directory, the output will have name "final_submission_<file_suffix>.csv". FALSE indicates you want to evaluate crps on the test set.
@@ -98,11 +99,19 @@ library(lubridate)
 nearestfri=function(x){
   return(x - wday(x) + 6)
 }
+
 clean_df=function(df){
     df$Date=as.character(df$Date)
   df$Volume=as.numeric(df$Volume)
   df$stock_id=as.numeric(df$stock_id)
-  df$Date=as.Date(df$Date, "%m/%d/%Y")
+  
+  newDates=as.Date(df$Date, "%m/%d/%Y")
+  if(all(!is.na(newDates))) {
+    df$Date=newDates
+  }
+  else {
+    df$Date=as.Date(df$Date)
+  }
 
   return(df)
 }
